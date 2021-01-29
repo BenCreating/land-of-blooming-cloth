@@ -1,6 +1,6 @@
 # Land of Blooming Cloth
 
- A playable version of the [Ewa and Haunted Automaton's strategy game](https://www.youtube.com/watch?v=hDCCdcRa41w) designed for the people of Ewa's River Basin.
+ A playable version of [Ewa and Haunted Automaton's strategy game](https://www.youtube.com/watch?v=hDCCdcRa41w) designed for the people of Ewa's River Basin.
 
 
 
