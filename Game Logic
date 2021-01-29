@@ -1,0 +1,478 @@
+on newGame
+   global turn, spaceColor, gameState, playerType, totalTurns, setupData, gameStartTime
+
+   put 0 into totalTurns
+
+   put empty into gameState
+   lock screen for visual effect
+   repeat with i = 1 to the number of btns of group "Grid"
+      set the icon of btn i of group "Grid" to empty
+      set the backgroundColor of btn i of group "Grid" to spaceColor
+
+      put the short name of btn i of group "Grid" into gridLoc
+      put empty into gameState[gridLoc]["owningPlayer"]
+      put empty into gameState[gridLoc]["folds"]
+      put false into gameState[gridLoc]["isLocked"]
+      put empty into gameState[gridLoc]["linkedSpace"]
+      put empty into gameState[gridLoc]["iconPiece"]
+   end repeat
+   unlock screen with effect iris open
+
+   put 12,12 into gameState["piecesLeft"]
+   put 0 into turn
+
+   set the loc of btn "Drag Piece" to the loc of btn "Pieces Stack"
+
+   put setupData["Player 1"]["player"],setupData["Player 2"]["player"] into playerType
+
+   put the seconds into gameStartTime
+   nextTurn
+end newGame
+
+on nextTurn
+   global turn, gameState, playerType, totalTurns
+   add 1 to totalTurns
+
+   if turn = 1 then
+      put 2 into turn
+   else
+      put 1 into turn
+   end if
+
+
+   updateDisplay
+
+   if gameOver(gameState) is false then
+      if item turn of playerType is "AI" then
+         AITurn
+      else
+
+      end if
+   else
+      reportWin
+   end if
+end nextTurn
+
+on reportWin
+   global gameState, boardSize, totalTurns, gameStartTime
+   put 0 into score
+   repeat with x = 0 to boardSize - 1
+      repeat with y = 0 to boardSize - 1
+         if gameState[x,y]["owningPlayer"] = 1 then add 1 to score
+         if gameState[x,y]["owningPlayer"] = 2 then subtract 1 from score
+      end repeat
+   end repeat
+   if score > 0 then put "Red Wins!" into winner
+   if score < 0 then put "Yellow Wins!" into winner
+   if score = 0 then put "Draw!" into winner
+   answer winner & return & "Turns:" && totalTurns & return & "Score:" && score & return & "Time:" && the seconds - gameStartTime && "seconds"
+end reportWin
+
+on newGrid
+   global boardSize, spaceSize
+   lock screen
+   if there is a group "Grid" then delete group "Grid"
+   create group "Grid"
+   set the margins of group "Grid" to 0
+   repeat with row = 0 to boardSize - 1
+      repeat with column = 0 to boardSize - 1
+         copy btn "Grid" of cd "Resources" to group "Grid"
+         set the name of it to column,row
+         set the width of it to spaceSize
+         set the height of it to spaceSize
+         set the topLeft of it to (column * spaceSize),(row * spaceSize)
+         set the behavior of it to the long id of btn "Grid Space Behavior" of cd "Resources"
+      end repeat
+   end repeat
+   unlock screen
+end newGrid
+
+on hiliteOpenSpaces
+   lock screen
+   put findOpenSpaces() into openSpaces
+   repeat for each line spaceName in openSpaces
+      set the icon of btn spaceName of group "Grid" to "Open Space Indicator"
+   end repeat
+   unlock screen
+end hiliteOpenSpaces
+
+on unhiliteSpaces
+   global spaceColor, gameState
+   lock screen
+   repeat with i = 1 to the number of btns of group "Grid"
+      if  gameState[the short name of btn i of group "Grid"]["owningPlayer"] is empty then
+         set the icon of btn i of group "Grid" to empty
+      end if
+      set the backgroundColor of btn i of group "Grid" to spaceColor
+   end repeat
+   unlock screen
+end unhiliteSpaces
+
+function findOpenSpaces
+   global gameState
+   put empty into openSpaces
+   repeat with i = 1 to the number of btns of group "Grid"
+      if gameState[the short name of btn i of group "Grid"]["owningPlayer"] is empty then
+         put listAppend(openSpaces,the short name of btn i of group "Grid", return) into openSpaces
+      end if
+   end repeat
+   return openSpaces
+end findOpenSpaces
+
+on updateDisplay
+   global gameState, turn
+   lock screen
+   put item turn of gameState["piecesLeft"] into fld "Pieces Count"
+
+   set the icon of btn "Pieces Stack" to "P" & turn && "Down,Right"
+   set the icon of btn "Drag Piece" to "P" & turn && "Down,Right"
+
+   repeat with i = 1 to the number of btns of group "Grid"
+      put the short name of btn i of group "Grid" into gridSpace
+      put gameState[gridSpace]["owningPlayer"] into spaceOwner
+      put gameState[gridSpace]["folds"] into folds
+      put gameState[gridSpace]["iconPiece"] into iconPiece
+
+      if spaceOwner is empty then
+         set the icon of btn gridSpace of group "Grid" to empty
+      else
+         if folds is empty then
+            put "P" & spaceOwner && iconPiece into spaceIcon
+         else if iconPiece is empty then
+            put "P" & spaceOwner && folds into spaceIcon
+         else
+            put "P" & spaceOwner && iconPiece && folds into spaceIcon
+         end if
+         set the icon of btn gridSpace of group "Grid" to spaceIcon
+      end if
+   end repeat
+   unlock screen
+end updateDisplay
+
+on AITurn
+   global gameState, turn, AIStartTime, maxTime, setupData, AIStyle
+
+   put the seconds into AIStartTime
+   put setupData["Player" && turn]["thinkTime"] into maxTime
+   put setupData["Player" && turn]["style"] into AIStyle
+
+   put 3 into searchDepth
+
+   put allValidMoves(gameState, turn, true) into randomPickList
+   put empty into moveList
+   if randomPickList is not empty then
+      if AIStyle is "Random" then
+         put line random(the number of lines of randomPickList) of randomPickList into pickedMove
+      else
+         repeat the number of lines of randomPickList
+            if the seconds - AIStartTime < maxTime then
+               put random(the number of lines of randomPickList) into moveID
+               put line moveID of randomPickList into checkMove
+               delete line moveID of randomPickList
+
+               put makeMove(gameState, checkMove, turn) into checkState
+
+               put true into maximizingPlayer
+               if turn = 2 then put false into maximizingPlayer
+               put minimax(checkState, searchDepth, -infinity, infinity, maximizingPlayer) into score
+            else
+               put 0 into score
+            end if
+            put listAppend(moveList,score & "," & checkMove,return) into moveList
+         end repeat
+
+         sort lines of moveList numeric ascending by item 1 of each
+         if turn = 1 then
+            put the last line of moveList into pickedMove
+         else
+            put line 1 of moveList into pickedMove
+         end if
+         delete item 1 of pickedMove
+      end if
+
+      put makeMove(gameState, pickedMove, turn) into gameState
+   end if
+
+   nextTurn
+end AITurn
+
+function makeMove boardState, moveData, turn
+   if item 1 of moveData is "Place" then
+      put item 2 to 3 of moveData into moveArray["dropSpace"]
+      put moveData into unfoldDirection
+      delete item 1 to 3 of unfoldDirection
+      put unfoldDirection into moveArray["unfoldDirection"]
+      put turn into moveArray["turn"]
+      put placePiece(boardState, moveArray, turn) into boardState
+   else if item 1 of moveData is "Fold" then
+      put unfoldMaster(boardState, item 2 to 3 of moveData) into boardState
+   end if
+   return boardState
+end makeMove
+
+function placePiece gameState, moveData
+   put moveData["dropSpace"] into dropSpace
+
+   put moveData["turn"] into gameState[dropSpace]["owningPlayer"]
+   put moveData["unfoldDirection"] into gameState[dropSpace]["folds"]
+   put false into gameState[dropSpace]["isLocked"]
+   put empty into gameState[dropSpace]["linkedSpace"]
+   put empty into gameState[dropSpace]["iconPiece"]
+
+   subtract 1 from item moveData["turn"] of gameState["piecesLeft"]
+   return gameState
+end placePiece
+
+function unfoldMaster gameState, gridLoc
+   //The master unfold function unfolds for the selected space and any linked space
+   put gameState[gridLoc]["linkedSpace"] into linkedSpace
+   if linkedSpace is not empty then put unfold(gameState,linkedSpace) into gameState
+   put unfold(gameState,gridLoc) into gameState
+   return gameState
+end unfoldMaster
+
+function unfold gameState, gridLoc
+   //Unfolds the selected space, but not linked spaces
+   put gameState[gridLoc]["folds"] into foldDirections
+   put item 1 of foldDirections into thisFold
+   delete item 1 of foldDirections
+   put foldDirections into gameState[gridLoc]["folds"]
+
+   put gameState[gridLoc]["iconPiece"] into myIconPiece
+   put myIconPiece into capturedIconPiece
+
+   if thisFold is "Up" then
+      put item 1 of gridLoc,item 2 of gridLoc - 1 into capturedSpace
+      put "B" before myIconPiece
+      put "T" before capturedIconPiece
+   else if thisFold is "Down" then
+      put item 1 of gridLoc,item 2 of gridLoc + 1 into capturedSpace
+      put "T" before myIconPiece
+      put "B" before capturedIconPiece
+   else if thisFold is "Left" then
+      put item 1 of gridLoc - 1,item 2 of gridLoc into capturedSpace
+      put "R" after myIconPiece
+      put "L" after capturedIconPiece
+   else if thisFold is "Right" then
+      put item 1 of gridLoc + 1,item 2 of gridLoc into capturedSpace
+      put "L" after myIconPiece
+      put "R" after capturedIconPiece
+   end if
+   put myIconPiece into gameState[gridLoc]["iconPiece"]
+
+   if there is a btn capturedSpace of group "Grid" then
+      //Lock any cloth that becomes covered
+      if gameState[capturedSpace]["linkedSpace"] is not empty then
+         put gameState[capturedSpace]["linkedSpace"] into lockedSpace
+         put true into gameState[lockedSpace]["isLocked"]
+         put empty into gameState[lockedSpace]["linkedSpace"]
+      end if
+
+      //Set the new data for this space and the captured space
+      put gameState[gridLoc]["owningPlayer"] into gameState[capturedSpace]["owningPlayer"]
+      put capturedIconPiece into gameState[capturedSpace]["iconPiece"]
+
+      if foldDirections is empty then
+         put empty into gameState[capturedSpace]["folds"]
+         put empty into gameState[gridLoc]["linkedSpace"]
+         put empty into gameState[capturedSpace]["linkedSpace"]
+         put true into gameState[gridLoc]["isLocked"]
+         put true into gameState[capturedSpace]["isLocked"]
+      else
+         put capturedSpace into gameState[gridLoc]["linkedSpace"]
+         put gridLoc into gameState[capturedSpace]["linkedSpace"]
+         put foldDirections into gameState[capturedSpace]["folds"]
+         put false into gameState[capturedSpace]["isLocked"]
+      end if
+   end if
+   return gameState
+end unfold
+
+function allValidMoves gameState, turn, reduceList
+   global boardSize
+   put empty into moveList
+
+   //Adding new pieces to the board
+   if item turn of gameState["piecesLeft"] > 0 then
+      put findOpenSpaces() into moveList
+
+      repeat with i = the number of lines of moveList down to 1
+         put empty into orientationList
+
+         put "Down,Right" & return & "Left,Down" & return & "Up,Left" & return & "Right,Up" & return & \
+               "Down,Left" & return & "Right,Down" & return & "Up,Right" & return & "Left,Up" into pieceDirections
+         //If the reduce option is active, remove all the moves that would result in folding off the board
+         if reduceList is true then
+            repeat with checkDir = the number of lines of pieceDirections down to 1
+               put false into dropMove
+               if item 1 of line i of moveList = 0 and line checkDir of pieceDirections contains "Left" then put true into dropMove
+               if item 1 of line i of moveList = boardSize - 1 and line checkDir of pieceDirections contains "Right" then put true into dropMove
+               if item 2 of line i of moveList = 0 and line checkDir of pieceDirections contains "Up" then put true into dropMove
+               if item 2 of line i of moveList = boardSize - 1 and line checkDir of pieceDirections contains "Down" then put true into dropMove
+               if dropMove is true then
+                  delete line checkDir of pieceDirections
+               end if
+            end repeat
+         end if
+
+         repeat for each line direction in pieceDirections
+            put "Place," & line i of moveList & "," & direction into orientationData
+            put listAppend(orientationList, orientationData, return) into orientationList
+         end repeat
+         put orientationList into line i of moveList
+      end repeat
+   end if
+
+   //Folding
+   repeat with i = 1 to the number of btns of group "Grid"
+      put the short name of btn i of group "Grid" into gridSpace
+      if "Fold," & gameState[gridSpace]["linkedSpace"] is among the lines of moveList then next repeat
+      if gameState[gridSpace]["owningPlayer"] is turn and gameState[gridSpace]["isLocked"] is false then
+         put listAppend(moveList,"Fold," & gridSpace, return) into moveList
+      end if
+   end repeat
+
+   //If we're reducing the list, randomly remove lines until we meet a threshhold
+   if reduceList is true then
+      repeat while the number of lines of moveList > 100
+         delete line random(the number of lines of moveList) of moveList
+      end repeat
+   end if
+   return moveList
+end allValidMoves
+
+function minimax position, depth, alpha, beta, maximizingPlayer
+   global AIStartTime, maxTime, AIStyle
+   if the shiftKey is down then return 0
+   if the seconds - AIStartTime > maxTime then return 0
+   set the cursor to busy
+   if depth = 0 or value("gameOver(position)") is true then return value("evalState(position, AIStyle)")
+
+   if maximizingPlayer is true then
+      put 1 into turn
+   else
+      put 2 into turn
+   end if
+
+   put allValidMoves(position, turn, true) into randomPickList
+   if maximizingPlayer is true then
+      put -infinity into maxEval
+      repeat for the number of lines of randomPickList
+         put random(the number of lines of randomPickList) into moveID
+         put line moveID of randomPickList into checkMove
+         delete line moveID of randomPickList
+         put value("makeMove(position, checkMove, turn)") into resultState
+         put minimax(resultState, depth - 1, alpha, beta, false) into eval
+         put max(maxEval, eval) into maxEval
+         put max(alpha, eval) into alpha
+         if beta <= alpha then exit repeat
+      end repeat
+      return maxEval
+   else
+      put infinity into minEval
+      repeat for the number of lines of randomPickList
+         put random(the number of lines of randomPickList) into moveID
+         put line moveID of randomPickList into checkMove
+         delete line moveID of randomPickList
+         put value("makeMove(position, checkMove, turn)") into resultState
+         put minimax(resultState, depth - 1, alpha, beta, true) into eval
+         put min(minEval, eval) into minEval
+         put min(beta, eval) into beta
+         if beta <= alpha then exit repeat
+      end repeat
+   end if
+end minimax
+
+function evalState boardState, AIStyle
+   global boardSize
+   put 0 into score
+
+   //Get the scoring for each AIStyle
+   switch AIStyle
+      case "Careful"
+         put 1 into territoryScore
+         put -4 into dangerScore
+         put -1 into conflictScore
+         break
+      case "Aggressive"
+         put 3 into territoryScore
+         put -4 into dangerScore
+         put -1 into conflictScore
+         break
+      default
+         put 1 into territoryScore
+         put -4 into dangerScore
+         put -1 into conflictScore
+   end switch
+
+   repeat with x = 0 to boardSize - 1
+      repeat with y = 0 to boardSize - 1
+         if boardState[x,y]["owningPlayer"] is empty then next repeat
+
+         //territoryScore, how much territory is controlled by this player
+         put adjustScore(score,boardState[x,y]["owningPlayer"],territoryScore) into score
+
+         //dangerScore, Adjust for new pieces next to ENEMY pieces that would unfold on to them
+         if boardState[x,y]["owningPlayer"] is not boardState[x-1,y]["owningPlayer"] and boardState[x-1,y]["owningPlayer"] is not empty then
+            if item 1 of boardState[x-1,y]["folds"] is "Right" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],dangerScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] is not boardState[x+1,y]["owningPlayer"] and boardState[x+1,y]["owningPlayer"] is not empty then
+            if item 1 of boardState[x+1,y]["folds"] is "Left" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],dangerScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] is not boardState[x,y-1]["owningPlayer"] and boardState[x,y-1]["owningPlayer"] is not empty then
+            if item 1 of boardState[x,y-1]["folds"] is "Down" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],dangerScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] is not boardState[x,y+1]["owningPlayer"] and boardState[x,y+1]["owningPlayer"] is not empty then
+            if item 1 of boardState[x,y+1]["folds"] is "Up" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],dangerScore) into score
+            end if
+         end if
+
+         //conflictScore, adjust for new pieces next to ALLY pieces that would unfold on to them
+         if boardState[x,y]["owningPlayer"] = boardState[x-1,y]["owningPlayer"] then
+            if boardState[x-1,y]["folds"] contains "Right" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],conflictScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] = boardState[x+1,y]["owningPlayer"] then
+            if boardState[x+1,y]["folds"] contains "Left" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],conflictScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] = boardState[x,y-1]["owningPlayer"] then
+            if boardState[x,y-1]["folds"] contains "Down" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],conflictScore) into score
+            end if
+         end if
+         if boardState[x,y]["owningPlayer"] = boardState[x,y+1]["owningPlayer"] then
+            if boardState[x,y+1]["folds"] contains "Up" then
+               put adjustScore(score,boardState[x,y]["owningPlayer"],conflictScore) into score
+            end if
+         end if
+      end repeat
+   end repeat
+   return score
+end evalState
+
+function adjustScore score, turn, amount
+   if turn = 1 then
+      add amount to score
+   else if turn = 2 then
+      subtract amount from score
+   end if
+   return score
+end adjustScore
+
+function gameOver boardState
+   if allValidMoves(boardState, 1, true) is empty and allValidMoves(boardState, 2, true) is empty then
+      return true
+   else
+      return false
+   end if
+end gameOver
