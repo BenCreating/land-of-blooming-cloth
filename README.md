@@ -21,3 +21,5 @@ The AI uses a minimax algorithm with alpha-beta pruning. There are *lot* of poss
 - Pieces that are covered by an unfolding cloth are locked and cannot be unfolded.
 - Play continues until neither player can make a legal move
 - The winner is the player with the most spaces covered by their pieces. Only count the top layer of cloth.
+
+Written in [LiveCode](https://livecode.org). I've supplied the [code for the main game logic](https://github.com/BenCreating/land-of-blooming-cloth/blob/main/Game%20Logic), for anyone who wants to view it without downloading LiveCode.
